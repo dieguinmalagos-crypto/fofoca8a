@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fofocas 8ºA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="mouse-glow" id="mouseGlow"></div>
+    <div class="background-split" aria-hidden="true">
+      <div class="left-side"><span class="bg-icon">🌙</span></div>
+      <div class="middle-gradient"></div>
+      <div class="right-side"><span class="bg-icon">☀️</span></div>
+      <div class="sparkles"></div>
+    </div>
+
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Fofocas Exclusivas • Sala 8ºA</h1>
+          <p class="subtitle">Segredo de um lado, caos do outro ✨</p>
+        </div>
+        <button class="adm-btn" id="openAdmin">adm</button>
+      </header>
+
+      <section class="search-wrap card">
+        <p id="serverStatus" class="hint"></p>
+        <input
+          id="searchInput"
+          type="search"
+          placeholder="Pesquisar fofoca pelo título..."
+          autocomplete="off"
+        />
+      </section>
+
+      <section class="auth-and-post card">
+        <div class="auth-controls">
+          <p id="sessionLabel">Você está navegando como visitante.</p>
+          <div class="auth-buttons" id="authButtons">
+            <button id="showLoginBtn" class="btn dark">Entrar</button>
+            <button id="showRegisterBtn" class="btn warm">Criar conta</button>
+          </div>
+          <button id="logoutBtn" class="btn ghost hidden">Sair</button>
+        </div>
+
+        <form id="postForm" class="post-form">
+          <input id="gossipTitle" type="text" placeholder="Título da fofoca" required />
+          <textarea id="gossipContent" placeholder="Conte a fofoca..."></textarea>
+          <label class="file-label">
+            Adicionar imagem (opcional)
+            <input id="gossipImage" type="file" accept="image/*" />
+          </label>
+          <button type="submit" class="btn warm">Enviar fofoca</button>
+          <p id="postHint" class="hint">
+            Faça login para publicar fofocas. Visitantes só podem ler.
+          </p>
+        </form>
+      </section>
+
+      <section>
+        <h2>Mural de fofocas</h2>
+        <div id="gossipList" class="gossip-list"></div>
+      </section>
+    </main>
+
+    <dialog id="authDialog" class="modal">
+      <form method="dialog" class="modal-card" id="authForm">
+        <h3 id="authTitle">Entrar</h3>
+        <input id="authUsername" placeholder="Nome de usuário" required />
+        <input id="authPassword" type="password" placeholder="Senha" required />
+        <p id="authError" class="error"></p>
+        <div class="modal-actions">
+          <button value="cancel" class="btn ghost" type="button" id="cancelAuth">Cancelar</button>
+          <button class="btn dark" type="submit">Confirmar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="adminDialog" class="modal">
+      <div class="modal-card admin-card">
+        <div id="adminGate">
+          <h3>Painel Secreto</h3>
+          <p>Somente administrador.</p>
+          <input id="adminUser" placeholder="Usuário admin" />
+          <input id="adminPass" type="password" placeholder="Senha admin" />
+          <p id="adminLoginError" class="error"></p>
+          <div class="modal-actions">
+            <button class="btn ghost" id="closeAdminGate">Fechar</button>
+            <button class="btn dark" id="adminEnter">Entrar</button>
+          </div>
+        </div>
+
+        <div id="adminPanel" class="hidden">
+          <div class="admin-head">
+            <h3>Painel do administrador</h3>
+            <button class="btn ghost" id="adminExit">Sair do painel</button>
+          </div>
+
+          <section>
+            <h4>Contas criadas</h4>
+            <div id="accountsList" class="admin-list"></div>
+          </section>
+
+          <section>
+            <h4>Fofocas enviadas (com autor visível só aqui)</h4>
+            <div id="adminGossipList" class="admin-list"></div>
+          </section>
+
+          <button class="btn danger" id="resetSite">Resetar site (apagar tudo)</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="script.js"></script>
+  </body>
+</html>
