@@ -1,16 +1,11 @@
 const ADMIN_USER = "Enzo_labubu";
 const ADMIN_PASS = "20121710";
-
-const STORAGE_KEYS = {
-  users: "fofoca8a_users",
-  gossips: "fofoca8a_gossips",
-  session: "fofoca8a_session",
-};
+const SESSION_KEY = "fofoca8a_session";
 
 const state = {
-  users: load(STORAGE_KEYS.users, []),
-  gossips: load(STORAGE_KEYS.gossips, []),
-  session: load(STORAGE_KEYS.session, null),
+  users: [],
+  gossips: [],
+  session: loadSession(),
   authMode: "login",
   adminUnlocked: false,
 };
@@ -52,7 +47,13 @@ const els = {
 };
 
 bindEvents();
-render();
+boot();
+setInterval(refreshPublicState, 5000);
+
+async function boot() {
+  await refreshPublicState();
+  render();
+}
 
 function bindEvents() {
   document.addEventListener("mousemove", ({ clientX, clientY }) => {
@@ -64,27 +65,23 @@ function bindEvents() {
   els.showRegisterBtn.addEventListener("click", () => openAuth("register"));
   els.cancelAuth.addEventListener("click", () => els.authDialog.close());
 
-  els.authForm.addEventListener("submit", (event) => {
+  els.authForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    state.authMode === "login" ? login() : register();
+    if (state.authMode === "login") await login();
+    else await register();
   });
 
   els.logoutBtn.addEventListener("click", () => {
     state.session = null;
-    persist(STORAGE_KEYS.session, null);
+    saveSession(null);
     render();
   });
 
   els.postForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+
     if (!state.session) {
       alert("Faça login para postar fofocas.");
-      return;
-    }
-
-    const user = getCurrentUser();
-    if (!user || user.banned) {
-      alert("Sua conta está banida. Você não pode postar.");
       return;
     }
 
@@ -96,17 +93,25 @@ function bindEvents() {
     }
 
     const image = await fileToDataURL(els.gossipImage.files[0]);
-    state.gossips.unshift({
-      id: crypto.randomUUID(),
-      title,
-      content,
-      image,
-      author: state.session,
-      createdAt: new Date().toISOString(),
+
+    const response = await api("/api/post", {
+      method: "POST",
+      body: JSON.stringify({ username: state.session, title, content, image }),
     });
 
-    persist(STORAGE_KEYS.gossips, state.gossips);
+    if (!response.ok) {
+      const data = await response.json();
+      alert(data.error || "Não foi possível postar.");
+      if (response.status === 401 || response.status === 403) {
+        state.session = null;
+        saveSession(null);
+      }
+      render();
+      return;
+    }
+
     els.postForm.reset();
+    await refreshPublicState();
     render();
   });
 
@@ -120,14 +125,20 @@ function bindEvents() {
 
   els.closeAdminGate.addEventListener("click", () => els.adminDialog.close());
 
-  els.adminEnter.addEventListener("click", () => {
-    if (els.adminUser.value === ADMIN_USER && els.adminPass.value === ADMIN_PASS) {
-      state.adminUnlocked = true;
-      els.adminLoginError.textContent = "";
-      updateAdminView();
-    } else {
+  els.adminEnter.addEventListener("click", async () => {
+    const response = await api("/api/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ adminUser: els.adminUser.value, adminPass: els.adminPass.value }),
+    });
+
+    if (!response.ok) {
       els.adminLoginError.textContent = "Credenciais inválidas.";
+      return;
     }
+
+    state.adminUnlocked = true;
+    els.adminLoginError.textContent = "";
+    await updateAdminView();
   });
 
   els.adminExit.addEventListener("click", () => {
@@ -135,17 +146,28 @@ function bindEvents() {
     els.adminDialog.close();
   });
 
-  els.resetSite.addEventListener("click", () => {
+  els.resetSite.addEventListener("click", async () => {
     if (!confirm("Tem certeza? Isso apaga todas as contas e fofocas.")) return;
-    state.users = [];
-    state.gossips = [];
+
+    await api("/api/admin/reset", {
+      method: "POST",
+      body: JSON.stringify({ adminUser: ADMIN_USER, adminPass: ADMIN_PASS }),
+    });
+
     state.session = null;
-    persist(STORAGE_KEYS.users, state.users);
-    persist(STORAGE_KEYS.gossips, state.gossips);
-    persist(STORAGE_KEYS.session, state.session);
+    saveSession(null);
+    await refreshPublicState();
     render();
-    updateAdminView();
+    await updateAdminView();
   });
+}
+
+async function refreshPublicState() {
+  const response = await api("/api/state");
+  if (!response.ok) return;
+  const data = await response.json();
+  state.gossips = data.gossips || [];
+  renderGossips();
 }
 
 function openAuth(mode) {
@@ -156,31 +178,30 @@ function openAuth(mode) {
   els.authDialog.showModal();
 }
 
-function register() {
+async function register() {
   const username = els.authUsername.value.trim();
   const password = els.authPassword.value;
 
   if (!username || !password) return;
-  if (username === ADMIN_USER) {
-    els.authError.textContent = "Esse nome está reservado.";
+
+  const response = await api("/api/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json();
+    els.authError.textContent = data.error || "Erro ao criar conta.";
     return;
   }
 
-  const exists = state.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
-  if (exists) {
-    els.authError.textContent = "Nome de usuário já existe.";
-    return;
-  }
-
-  state.users.push({ username, password, banned: false });
-  persist(STORAGE_KEYS.users, state.users);
   state.session = username;
-  persist(STORAGE_KEYS.session, state.session);
+  saveSession(username);
   els.authDialog.close();
   render();
 }
 
-function login() {
+async function login() {
   const username = els.authUsername.value.trim();
   const password = els.authPassword.value;
 
@@ -189,39 +210,31 @@ function login() {
     return;
   }
 
-  const user = state.users.find((u) => u.username === username && u.password === password);
+  const response = await api("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
 
-  if (!user) {
-    els.authError.textContent = "Usuário ou senha inválidos.";
+  if (!response.ok) {
+    const data = await response.json();
+    els.authError.textContent = data.error || "Usuário ou senha inválidos.";
     return;
   }
 
-  if (user.banned) {
-    els.authError.textContent = "Conta banida.";
-    return;
-  }
-
-  state.session = user.username;
-  persist(STORAGE_KEYS.session, state.session);
+  state.session = username;
+  saveSession(username);
   els.authDialog.close();
   render();
 }
 
 function render() {
-  const user = getCurrentUser();
-
-  if (state.session && user && !user.banned) {
+  if (state.session) {
     els.sessionLabel.textContent = `Logado como ${state.session}`;
     els.authButtons.classList.add("hidden");
     els.logoutBtn.classList.remove("hidden");
     els.postHint.textContent = "Postagem anônima ativa. Seu nome nunca aparece no mural.";
     disableForm(false);
   } else {
-    if (state.session && (!user || user.banned)) {
-      state.session = null;
-      persist(STORAGE_KEYS.session, null);
-    }
-
     els.sessionLabel.textContent = "Você está navegando como visitante.";
     els.authButtons.classList.remove("hidden");
     els.logoutBtn.classList.add("hidden");
@@ -230,7 +243,6 @@ function render() {
   }
 
   renderGossips();
-  if (state.adminUnlocked) updateAdminView();
 }
 
 function disableForm(disabled) {
@@ -260,11 +272,22 @@ function renderGossips() {
     : "<p class='card'>Nenhuma fofoca encontrada.</p>";
 }
 
-function updateAdminView() {
+async function updateAdminView() {
   els.adminGate.classList.toggle("hidden", state.adminUnlocked);
   els.adminPanel.classList.toggle("hidden", !state.adminUnlocked);
 
   if (!state.adminUnlocked) return;
+
+  const response = await api("/api/admin/state", {
+    method: "POST",
+    body: JSON.stringify({ adminUser: ADMIN_USER, adminPass: ADMIN_PASS }),
+  });
+
+  if (!response.ok) return;
+
+  const data = await response.json();
+  state.users = data.users || [];
+  state.gossips = data.gossips || [];
 
   els.accountsList.innerHTML = state.users.length
     ? state.users
@@ -295,45 +318,49 @@ function updateAdminView() {
     : "<p>Nenhuma fofoca enviada.</p>";
 
   bindAdminActions();
+  renderGossips();
 }
 
 function bindAdminActions() {
   els.accountsList.querySelectorAll("[data-action='ban']").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const user = state.users.find((u) => u.username === btn.dataset.user);
-      if (!user) return;
-      user.banned = !user.banned;
-      if (user.banned && state.session === user.username) {
-        state.session = null;
-        persist(STORAGE_KEYS.session, null);
-      }
-      persist(STORAGE_KEYS.users, state.users);
-      render();
-      updateAdminView();
+    btn.addEventListener("click", async () => {
+      await api("/api/admin/ban", {
+        method: "POST",
+        body: JSON.stringify({ adminUser: ADMIN_USER, adminPass: ADMIN_PASS, username: btn.dataset.user }),
+      });
+      await updateAdminView();
     });
   });
 
   els.adminGossipList.querySelectorAll("[data-action='delete-gossip']").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.gossips = state.gossips.filter((g) => g.id !== btn.dataset.id);
-      persist(STORAGE_KEYS.gossips, state.gossips);
-      render();
-      updateAdminView();
+    btn.addEventListener("click", async () => {
+      await api("/api/admin/gossip/delete", {
+        method: "POST",
+        body: JSON.stringify({ adminUser: ADMIN_USER, adminPass: ADMIN_PASS, id: btn.dataset.id }),
+      });
+      await refreshPublicState();
+      await updateAdminView();
     });
   });
 }
 
-function load(key, fallback) {
+function api(url, options = {}) {
+  return fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+}
+
+function loadSession() {
   try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
+    return JSON.parse(localStorage.getItem(SESSION_KEY));
   } catch {
-    return fallback;
+    return null;
   }
 }
 
-function persist(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+function saveSession(username) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(username));
 }
 
 function fileToDataURL(file) {
@@ -344,10 +371,6 @@ function fileToDataURL(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-}
-
-function getCurrentUser() {
-  return state.users.find((u) => u.username === state.session) || null;
 }
 
 function formatDate(isoString) {
