@@ -24,6 +24,7 @@ const els = {
   postHint: document.getElementById("postHint"),
   gossipList: document.getElementById("gossipList"),
   searchInput: document.getElementById("searchInput"),
+  serverStatus: document.getElementById("serverStatus"),
   authDialog: document.getElementById("authDialog"),
   authForm: document.getElementById("authForm"),
   authTitle: document.getElementById("authTitle"),
@@ -167,6 +168,7 @@ async function refreshPublicState() {
   if (!response.ok) return;
   const data = await response.json();
   state.gossips = data.gossips || [];
+  els.serverStatus.textContent = "Mural online e sincronizado entre dispositivos.";
   renderGossips();
 }
 
@@ -348,6 +350,13 @@ function api(url, options = {}) {
   return fetch(url, {
     headers: { "Content-Type": "application/json" },
     ...options,
+  }).catch(() => {
+    els.serverStatus.textContent = "Servidor offline. Use: node server.js";
+    return {
+      ok: false,
+      status: 0,
+      json: async () => ({ error: "Servidor offline. Inicie com node server.js" }),
+    };
   });
 }
 
@@ -365,10 +374,34 @@ function saveSession(username) {
 
 function fileToDataURL(file) {
   if (!file) return Promise.resolve("");
+  if (file.type.startsWith("image/")) return compressImage(file);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressImage(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 1280;
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.onerror = () => resolve(reader.result);
+      img.src = reader.result;
+    };
+    reader.onerror = () => resolve("");
     reader.readAsDataURL(file);
   });
 }

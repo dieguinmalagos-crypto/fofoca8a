@@ -8,6 +8,7 @@ const DB_PATH = path.join(__dirname, 'data.json');
 
 const ADMIN_USER = 'Enzo_labubu';
 const ADMIN_PASS = '20121710';
+const MAX_BODY_SIZE = 12 * 1024 * 1024;
 
 function ensureDb() {
   if (!fs.existsSync(DB_PATH)) {
@@ -35,17 +36,31 @@ function json(res, status, data) {
 }
 
 function parseBody(req) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk) => (body += chunk));
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > MAX_BODY_SIZE) {
+        reject(new Error('PAYLOAD_TOO_LARGE'));
+        req.destroy();
+      }
+    });
     req.on('end', () => {
       try {
         resolve(body ? JSON.parse(body) : {});
       } catch {
-        resolve({});
+        reject(new Error('INVALID_JSON'));
       }
     });
+    req.on('error', () => reject(new Error('BODY_READ_ERROR')));
   });
+}
+
+function badBodyError(res, error) {
+  if (error.message === 'PAYLOAD_TOO_LARGE') {
+    return json(res, 413, { error: 'Imagem muito grande. Envie uma imagem menor.' });
+  }
+  return json(res, 400, { error: 'Requisição inválida.' });
 }
 
 function isAdmin(creds) {
@@ -96,7 +111,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/register' && req.method === 'POST') {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return badBodyError(res, error);
+    }
     const username = String(body.username || '').trim();
     const password = String(body.password || '');
 
@@ -113,7 +133,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/login' && req.method === 'POST') {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return badBodyError(res, error);
+    }
     const username = String(body.username || '').trim();
     const password = String(body.password || '');
 
@@ -126,7 +151,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/post' && req.method === 'POST') {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return badBodyError(res, error);
+    }
     const username = String(body.username || '').trim();
     const title = String(body.title || '').trim();
     const content = String(body.content || '').trim();
@@ -153,20 +183,35 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/admin/login' && req.method === 'POST') {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return badBodyError(res, error);
+    }
     if (!isAdmin(body)) return json(res, 401, { error: 'Credenciais inválidas.' });
     return json(res, 200, { ok: true });
   }
 
   if (url.pathname === '/api/admin/state' && req.method === 'POST') {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return badBodyError(res, error);
+    }
     if (!isAdmin(body)) return json(res, 401, { error: 'Sem permissão.' });
     const db = readDb();
     return json(res, 200, db);
   }
 
   if (url.pathname === '/api/admin/ban' && req.method === 'POST') {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return badBodyError(res, error);
+    }
     if (!isAdmin(body)) return json(res, 401, { error: 'Sem permissão.' });
     const username = String(body.username || '');
     const db = readDb();
@@ -178,7 +223,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/admin/gossip/delete' && req.method === 'POST') {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return badBodyError(res, error);
+    }
     if (!isAdmin(body)) return json(res, 401, { error: 'Sem permissão.' });
     const id = String(body.id || '');
     const db = readDb();
@@ -188,7 +238,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/admin/reset' && req.method === 'POST') {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      return badBodyError(res, error);
+    }
     if (!isAdmin(body)) return json(res, 401, { error: 'Sem permissão.' });
     writeDb({ users: [], gossips: [] });
     return json(res, 200, { ok: true });
